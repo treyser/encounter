@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Сутички</title></head>
+<body>
+  <div id="gm">
+    <div class="grid2">
+      <div><label class="lbl" for="size">Гравців</label><input id="size" type="number" min="1" max="8" value="4"></div>
+      <div><label class="lbl" for="level">Рівень</label><input id="level" type="number" min="1" max="20" value="3"></div>
+    </div>
+
+    <label class="lbl" style="margin-top:10px">Складність</label>
+    <div class="tabs" id="difficulty"></div>
+
+    <label class="lbl" style="margin-top:10px">Звідки брати ворогів</label>
+    <select id="category"><option value="">Будь-які</option></select>
+
+    <div class="grid2" style="margin-top:10px">
+      <div><label class="lbl" for="near">Не ближче (клітинок)</label><input id="near" type="number" min="1" max="30" value="5"></div>
+      <div><label class="lbl" for="far">Не далі (клітинок)</label><input id="far" type="number" min="2" max="60" value="12"></div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button type="button" id="roll">Згенерувати</button>
+      <button type="button" id="spawn" class="ghost" disabled>Спавнити</button>
+    </div>
+
+    <div id="result" class="list"></div>
+    <div class="hint" id="hint">Спершу привʼяжи токени: ПКМ на токені монстра → «Бестіарій».</div>
+
+    <div class="row" style="margin-top:10px">
+      <button type="button" id="clear" class="ghost">Прибрати ворогів зі сцени</button>
+    </div>
+  </div>
+
+  <div id="player" hidden class="hint">Сутички налаштовує Майстер.</div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "Сутички",
+  "version": "0.1.0",
+  "manifest_version": 1,
+  "description": "Генератор сутичок за складністю з бестіарію на 60 монстрів і спавн ворогів на мапі.",
+  "author": "Nikita",
+  "icon": "https://treyser.github.io/encounter/icon.svg",
+  "background_url": "https://treyser.github.io/encounter/background.html",
+  "action": {
+    "title": "Сутички",
+    "icon": "https://treyser.github.io/encounter/icon.svg",
+    "popover": "https://treyser.github.io/encounter/index.html",
+    "width": 440,
+    "height": 620
+  }
+}

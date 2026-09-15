@@ -31,6 +31,14 @@ export async function heroes() {
 
 const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
 
+// Прилипання рахуємо самі. Звертатись по нього до Owlbear не можна:
+// кожен виклик — обмін повідомленнями, а спроб тут сотні,
+// і пошук розтягується на хвилини.
+const snap = (p, dpi) => ({
+  x: Math.floor(p.x / dpi) * dpi + dpi / 2,
+  y: Math.floor(p.y / dpi) * dpi + dpi / 2,
+});
+
 // Підбір точок: не ближче minCells до героїв, не далі maxCells,
 // не ближче однієї клітинки одна до одної, і все це в межах мапи.
 export async function findSpots(count, opts) {
@@ -52,26 +60,24 @@ export async function findSpots(count, opts) {
   const nearEnough = (p) =>
     !heroPoints.length || heroPoints.some((h) => dist(p, h) <= max);
 
-  // Спершу чесний випадковий пошук у межах мапи
-  for (let tries = 0; tries < 3000 && spots.length < count; tries++) {
-    const raw = {
-      x: bounds.min.x + Math.random() * (bounds.max.x - bounds.min.x),
-      y: bounds.min.y + Math.random() * (bounds.max.y - bounds.min.y),
-    };
-    const p = await OBR.scene.grid.snapPosition(raw, 1, false, true);
+  const random = () => snap({
+    x: bounds.min.x + Math.random() * (bounds.max.x - bounds.min.x),
+    y: bounds.min.y + Math.random() * (bounds.max.y - bounds.min.y),
+  }, dpi);
+
+  // Спершу чесний пошук: усі умови разом
+  for (let tries = 0; tries < 4000 && spots.length < count; tries++) {
+    const p = random();
     if (inside(p) && farEnough(p) && nearEnough(p)) spots.push(p);
   }
 
-  // Якщо мапа тісна і місця не вистачило — послаблюємо вимогу до дальності
-  for (let tries = 0; tries < 2000 && spots.length < count; tries++) {
-    const raw = {
-      x: bounds.min.x + Math.random() * (bounds.max.x - bounds.min.x),
-      y: bounds.min.y + Math.random() * (bounds.max.y - bounds.min.y),
-    };
-    const p = await OBR.scene.grid.snapPosition(raw, 1, false, true);
-    if (inside(p) && heroPoints.every((h) => dist(p, h) >= min * 0.7)) {
-      if (spots.every((s) => dist(p, s) >= dpi * 0.9)) spots.push(p);
-    }
+  // Якщо мапа тісна — послаблюємо дальність, лишаючи головне:
+  // вороги все одно не опиняться впритул до героїв
+  for (let tries = 0; tries < 4000 && spots.length < count; tries++) {
+    const p = random();
+    if (!inside(p)) continue;
+    if (!heroPoints.every((h) => dist(p, h) >= min * 0.7)) continue;
+    if (spots.every((s) => dist(p, s) >= dpi * 0.9)) spots.push(p);
   }
 
   return spots;

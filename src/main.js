@@ -1,6 +1,6 @@
 import "./style.css";
 import OBR, { buildImage } from "@owlbear-rodeo/sdk";
-import { LIBRARY, PARTY, MONSTER } from "./common.js";
+import { LIBRARY, PARTY, MONSTER, BATTLE } from "./common.js";
 import { BESTIARY, CATEGORIES, byId } from "./bestiary.js";
 import { DIFFICULTY, generate, adjustedXp, target } from "./balance.js";
 import { mapBounds, heroes, findSpots } from "./place.js";
@@ -68,6 +68,18 @@ async function library() {
   return meta[LIBRARY] ?? {};
 }
 
+// Під монстром може лежати кілька виглядів; старі кімнати мають один запис
+function variants(entry) {
+  if (!entry) return [];
+  return Array.isArray(entry) ? entry : [entry];
+}
+
+// Кожному ворогові — випадковий вигляд зі списку
+const pickLook = (entry) => {
+  const list = variants(entry);
+  return list[Math.floor(Math.random() * list.length)];
+};
+
 // У пул ідуть лише ті монстри, чий токен уже привʼязано
 async function pool() {
   const lib = await library();
@@ -103,7 +115,9 @@ async function show() {
   if (!plan) {
     $("spawn").disabled = true;
     const lib = await library();
-    $("hint").textContent = `Ціль: ${goal} досвіду. У бібліотеці: ${Object.keys(lib).length} з 60`;
+    const looks = Object.values(lib).reduce((n, e) => n + variants(e).length, 0);
+    $("hint").textContent =
+      `Ціль: ${goal} досвіду. У бібліотеці: ${Object.keys(lib).length} з 60, виглядів: ${looks}`;
     return;
   }
 
@@ -180,10 +194,11 @@ async function spawn() {
     seen[m.id] = (seen[m.id] ?? 0) + 1;
     const same = queue.filter((x) => x.id === m.id).length;
     const label = same > 1 ? `${m.name} ${seen[m.id]}` : m.name;
+    const look = pickLook(lib[m.id]);
 
-    return buildImage(lib[m.id].image, lib[m.id].grid)
+    return buildImage(look.image, look.grid)
       .position(spots[i])
-      .scale(lib[m.id].scale ?? { x: 1, y: 1 })
+      .scale(look.scale ?? { x: 1, y: 1 })
       .layer("CHARACTER")
       .name(label)
       .text({ plainText: `${m.hp} ХП · КД ${m.ac}`, type: "PLAIN", richText: [] })
@@ -199,12 +214,48 @@ async function spawn() {
     : `Створено ворогів: ${items.length}`;
 }
 
+// Дописуємо створених у список бою сусіднього розширення
+async function addToBattle(items) {
+  try {
+    const meta = await OBR.room.getMetadata();
+    const state = meta[BATTLE];
+    if (!state) return;   // розширення «Бій» не встановлене або ще не чіпали
+
+    const order = [...(state.order ?? [])];
+    for (const item of items) {
+      if (order.some((e) => e.id === item.id)) continue;
+      order.push({
+        id: item.id,
+        sheetId: null,
+        name: item.name,
+        side: "foe",
+        dex: 0,
+        init: null,
+        roll: null,
+      });
+    }
+    await OBR.room.setMetadata({ [BATTLE]: { ...state, order } });
+  } catch (err) {
+    console.error("Не вдалося додати в бій:", err);
+  }
+}
+
 async function clearMonsters() {
   const mobs = await OBR.scene.items.getItems((i) => Boolean(i.metadata[MONSTER]));
   if (!mobs.length) {
     $("hint").textContent = "Ворогів на сцені немає";
     return;
   }
-  await OBR.scene.items.deleteItems(mobs.map((i) => i.id));
+  const ids = mobs.map((i) => i.id);
+  await OBR.scene.items.deleteItems(ids);
+
+  const meta = await OBR.room.getMetadata();
+  const state = meta[BATTLE];
+  if (state?.order?.length) {
+    await OBR.room.setMetadata({
+      [BATTLE]: { ...state, order: state.order.filter((e) => !ids.includes(e.id)) },
+    });
+  }
+
   $("hint").textContent = `Прибрано: ${mobs.length}`;
 }

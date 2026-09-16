@@ -65,7 +65,26 @@ async function saveParty() {
 
 async function library() {
   const meta = await OBR.room.getMetadata();
-  return meta[LIBRARY] ?? {};
+  const raw = meta[LIBRARY] ?? {};
+
+  // Стара версія зберігала один токен на монстра, нова — список варіантів.
+  // Приводимо до списку, щоб записи, зроблені раніше, не ламали спавн.
+  const fixed = {};
+  for (const [id, value] of Object.entries(raw)) {
+    const variants = Array.isArray(value) ? value : [value];
+    const usable = variants.filter((v) => v?.image?.url);
+    if (usable.length) fixed[id] = usable;
+  }
+  return fixed;
+}
+
+// Раніше на монстра зберігався один токен об'єктом, тепер список варіантів.
+// Старі записи читаємо так само, щоб нічого не загубилось.
+function variantsOf(lib, id) {
+  const entry = lib[id];
+  if (!entry) return [];
+  const list = Array.isArray(entry) ? entry : [entry];
+  return list.filter((v) => v?.image?.url);
 }
 
 // Під монстром може лежати кілька виглядів; старі кімнати мають один запис
@@ -85,7 +104,7 @@ async function pool() {
   const lib = await library();
   const cat = $("category").value;
   return BESTIARY.filter(
-    (m) => lib[m.id] && (!cat || m.cat === cat)
+    (m) => variantsOf(lib, m.id).length && (!cat || m.cat === cat)
   );
 }
 
@@ -145,6 +164,15 @@ async function show() {
 
 async function spawn() {
   if (!plan) return;
+  try {
+    await doSpawn();
+  } catch (err) {
+    $("hint").textContent = "Збій під час спавну: " + (err?.message ?? err);
+    console.error(err);
+  }
+}
+
+async function doSpawn() {
   if (!(await OBR.scene.isReady())) {
     $("hint").textContent = "Спершу відкрий сцену";
     return;
@@ -169,10 +197,31 @@ async function spawn() {
 
   const bounds = await mapBounds(center, dpi);
 
+  // якщо когось із плану немає в бібліотеці — краще сказати прямо
+  const missingArt = plan.group
+    .filter((g) => !lib[g.monster.id]?.length)
+    .map((g) => g.monster.name);
+  if (missingArt.length) {
+    $("hint").textContent =
+      "Немає токена для: " + missingArt.join(", ") + ". Привʼяжи через ПКМ → «Бестіарій»";
+    return;
+  }
+
   // розгортаємо групу в плаский список
   const queue = [];
   for (const g of plan.group) {
     for (let i = 0; i < g.count; i++) queue.push(g.monster);
+  }
+
+  const noArt = [...new Set(queue.filter((m) => !variantsOf(lib, m.id).length).map((m) => m.name))];
+  if (noArt.length) {
+    $("hint").textContent = `Немає токена для: ${noArt.join(", ")}. Привʼяжи через ПКМ → «Бестіарій».`;
+    return;
+  }
+
+  if (!party.length) {
+    // не помилка: вороги просто розсядуться будь-де в межах мапи
+    console.info("Токенів гравців на сцені немає — відстань ні від чого рахувати");
   }
 
   const spots = await findSpots(queue.length, {
@@ -184,7 +233,9 @@ async function spawn() {
   });
 
   if (!spots.length) {
-    $("hint").textContent = "Не знайшлося місця — спробуй зменшити відстань";
+    $("hint").textContent = heroPoints.length
+      ? `Не знайшлося місця: мапа ${Math.round(bounds.width / dpi)}×${Math.round(bounds.height / dpi)} клітинок. Зменш «не ближче» або збільш «не далі».`
+      : "Не знайшлося місця на мапі — перевір, чи є на сцені зображення на шарі Map.";
     return;
   }
 

@@ -167,8 +167,22 @@ async function spawn() {
   try {
     await doSpawn();
   } catch (err) {
-    $("hint").textContent = "Збій під час спавну: " + (err?.message ?? err);
-    console.error(err);
+    $("hint").textContent = "Збій під час спавну: " + describe(err);
+    console.error("Спавн:", err);
+  }
+}
+
+// Owlbear інколи віддає помилку об'єктом без поля message,
+// і тоді звичайне склеювання з рядком дає «[object Object]».
+function describe(err) {
+  if (!err) return "невідома причина";
+  if (typeof err === "string") return err;
+  if (err.message) return err.message;
+  if (err.error) return describe(err.error);
+  try {
+    return JSON.stringify(err).slice(0, 300);
+  } catch {
+    return String(err);
   }
 }
 

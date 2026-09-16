@@ -258,7 +258,10 @@ async function doSpawn() {
   const items = queue.slice(0, spots.length).map((m, i) => {
     seen[m.id] = (seen[m.id] ?? 0) + 1;
     const same = queue.filter((x) => x.id === m.id).length;
-    const label = same > 1 ? `${m.name} ${seen[m.id]}` : m.name;
+    const numbered = same > 1 ? `${m.name} ${seen[m.id]}` : m.name;
+    // ХП і КД кладемо в назву: підпис під токеном (text) вимагає повної
+    // структури зі стилем і розмірами, інакше Owlbear відхиляє елемент
+    const label = `${numbered} · ${m.hp} ХП · КД ${m.ac}`;
     const look = pickLook(lib[m.id]);
 
     return buildImage(look.image, look.grid)
@@ -266,7 +269,6 @@ async function doSpawn() {
       .scale(look.scale ?? { x: 1, y: 1 })
       .layer("CHARACTER")
       .name(label)
-      .text({ plainText: `${m.hp} ХП · КД ${m.ac}`, type: "PLAIN", richText: [] })
       .metadata({ [MONSTER]: m.id })
       .build();
   });

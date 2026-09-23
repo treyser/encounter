@@ -1,7 +1,7 @@
 import "./style.css";
 import OBR, { buildImage } from "@owlbear-rodeo/sdk";
 import { PARTY, MONSTER, BATTLE } from "./common.js";
-import { readLibrary, addVariants, unpack, clearLibrary } from "./library.js";
+import { readLibrary, addVariants, unpack, clearLibrary, exportLibrary, importLibrary } from "./library.js";
 import { SLUG_TO_ID, normalize } from "./slugs.js";
 import { BESTIARY, CATEGORIES, byId } from "./bestiary.js";
 import { DIFFICULTY, generate, adjustedXp, target } from "./balance.js";
@@ -54,6 +54,9 @@ async function init() {
 
   $("scan").addEventListener("click", scan);
   $("wipe").addEventListener("click", wipe);
+  $("save").addEventListener("click", saveFile);
+  $("load").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", loadFile);
   $("roll").addEventListener("click", roll);
   $("spawn").addEventListener("click", spawn);
   $("clear").addEventListener("click", clearMonsters);
@@ -145,6 +148,32 @@ async function scan() {
     $("hint").textContent = "Не вдалося записати: " + (err?.message ?? err);
     console.error(err);
   }
+}
+
+// Бібліотека лежить у браузері, тож для переїзду на інший компʼютер
+// її треба вивантажити файлом.
+function saveFile() {
+  const blob = new Blob([exportLibrary()], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "bestiary-tokens.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function loadFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const added = importLibrary(await file.text());
+    const lib = await readLibrary();
+    $("hint").textContent =
+      `Завантажено записів: ${added}. У бібліотеці: ${Object.keys(lib).length} з 60`;
+  } catch (err) {
+    $("hint").textContent = "Не вдалося прочитати файл";
+    console.error(err);
+  }
+  event.target.value = "";
 }
 
 async function wipe() {

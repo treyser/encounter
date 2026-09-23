@@ -78,16 +78,26 @@ async function library() {
 // Раніше на монстра зберігався один токен об'єктом, тепер список варіантів.
 // Старі записи читаємо так само, щоб нічого не загубилось.
 function variantsOf(lib, id) {
-  const entry = lib[id];
-  if (!entry) return [];
-  const list = Array.isArray(entry) ? entry : [entry];
-  return list.filter((v) => v?.image?.url);
+  return variants(lib[id]);
 }
 
 // Під монстром може лежати кілька виглядів; старі кімнати мають один запис
+// У localStorage варіанти лежать стисло ({ u, w, h, ... }), у старих
+// кімнатах — повним обʼєктом ({ image, grid, scale }). Зводимо до повного.
 function variants(entry) {
   if (!entry) return [];
-  return Array.isArray(entry) ? entry : [entry];
+  const list = Array.isArray(entry) ? entry : [entry];
+  return list
+    .map((v) => (v?.u ? unpack(v) : v))
+    .filter((v) => v?.image?.url)
+    .map((v) => ({
+      ...v,
+      grid: v.grid ?? {
+        dpi: v.image.width,
+        offset: { x: v.image.width / 2, y: v.image.height / 2 },
+      },
+      scale: v.scale ?? { x: 1, y: 1 },
+    }));
 }
 
 // Кожному ворогові — випадковий вигляд зі списку

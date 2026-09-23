@@ -1,6 +1,8 @@
 import "./style.css";
 import OBR, { buildImage } from "@owlbear-rodeo/sdk";
-import { LIBRARY, PARTY, MONSTER, BATTLE } from "./common.js";
+import { PARTY, MONSTER, BATTLE } from "./common.js";
+import { readLibrary, addVariants, unpack, clearLibrary } from "./library.js";
+import { SLUG_TO_ID, normalize } from "./slugs.js";
 import { BESTIARY, CATEGORIES, byId } from "./bestiary.js";
 import { DIFFICULTY, generate, adjustedXp, target } from "./balance.js";
 import { mapBounds, heroes, findSpots } from "./place.js";
@@ -50,6 +52,8 @@ async function init() {
     $(id).addEventListener("change", saveParty);
   }
 
+  $("scan").addEventListener("click", scan);
+  $("wipe").addEventListener("click", wipe);
   $("roll").addEventListener("click", roll);
   $("spawn").addEventListener("click", spawn);
   $("clear").addEventListener("click", clearMonsters);
@@ -64,18 +68,7 @@ async function saveParty() {
 }
 
 async function library() {
-  const meta = await OBR.room.getMetadata();
-  const raw = meta[LIBRARY] ?? {};
-
-  // Стара версія зберігала один токен на монстра, нова — список варіантів.
-  // Приводимо до списку, щоб записи, зроблені раніше, не ламали спавн.
-  const fixed = {};
-  for (const [id, value] of Object.entries(raw)) {
-    const variants = Array.isArray(value) ? value : [value];
-    const usable = variants.filter((v) => v?.image?.url);
-    if (usable.length) fixed[id] = usable;
-  }
-  return fixed;
+  return readLibrary();
 }
 
 // Раніше на монстра зберігався один токен об'єктом, тепер список варіантів.
@@ -106,6 +99,57 @@ async function pool() {
   return BESTIARY.filter(
     (m) => variantsOf(lib, m.id).length && (!cat || m.cat === cat)
   );
+}
+
+// Зчитати всі токени зі сцени й розкласти по бестіарію за назвами.
+// Назва токена має збігатися з англійським слугом; хвіст _1, _2, _3 ігнорується.
+async function scan() {
+  if (!(await OBR.scene.isReady())) {
+    $("hint").textContent = "Спершу відкрий сцену";
+    return;
+  }
+
+  const items = await OBR.scene.items.getItems(
+    (i) => i.layer === "CHARACTER" && i.type === "IMAGE"
+  );
+
+  const entries = [];
+  const unknown = new Set();
+
+  for (const item of items) {
+    // пробуємо і назву токена, і імʼя файлу картинки
+    const candidates = [item.name, item.image?.url?.split("/").pop()];
+    let id = null;
+    for (const c of candidates) {
+      const key = normalize(c);
+      if (SLUG_TO_ID[key]) { id = SLUG_TO_ID[key]; break; }
+    }
+    if (id) entries.push({ id: String(id), item });
+    else if (item.name) unknown.add(item.name);
+  }
+
+  if (!entries.length) {
+    $("hint").textContent =
+      "Нічого не впізнав. Назви токенів мають збігатися з англійськими, напр. fanatic_1";
+    return;
+  }
+
+  try {
+    const added = await addVariants(entries);
+    const lib = await readLibrary();
+    const missed = unknown.size ? ` Не впізнав: ${[...unknown].slice(0, 5).join(", ")}` : "";
+    $("hint").textContent =
+      `Впізнано токенів: ${entries.length}, нових записів: ${added}. ` +
+      `У бібліотеці: ${Object.keys(lib).length} з 60.` + missed;
+  } catch (err) {
+    $("hint").textContent = "Не вдалося записати: " + (err?.message ?? err);
+    console.error(err);
+  }
+}
+
+async function wipe() {
+  await clearLibrary();
+  $("hint").textContent = "Бібліотеку очищено";
 }
 
 async function roll() {
@@ -266,7 +310,7 @@ async function doSpawn() {
 
     return buildImage(look.image, look.grid)
       .position(spots[i])
-      .scale(look.scale ?? { x: 1, y: 1 })
+      .scale(look.scale)
       .layer("CHARACTER")
       .name(label)
       .metadata({ [MONSTER]: m.id })

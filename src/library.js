@@ -62,7 +62,9 @@ export async function writeLibrary(library) {
 
   for (const [id, list] of Object.entries(library)) {
     if (!list?.length) continue;
-    update[chunkKey(id)][id] = list;
+    const n = chunkOf(id);
+    if (n < 0 || n >= CHUNKS) continue;   // id поза бестіарієм
+    update[chunkKey(n)][id] = list;
   }
 
   update[LIBRARY] = undefined;   // старий ключ більше не потрібен

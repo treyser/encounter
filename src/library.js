@@ -1,16 +1,16 @@
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, LIBRARY } from "./common.js";
+import { LIBRARY } from "./common.js";
 
-// Метадані кімнати мають обмеження на розмір. Повний об'єкт картинки на
-// кожен варіант швидко його вичерпує — на п'ятому десятку записів Owlbear
-// просто перестає приймати запис. Тому зберігаємо стисло і розкладаємо
-// бібліотеку на шість частин по десять монстрів.
+// Метадані кімнати мають жорсткий ліміт на розмір — 159 варіантів туди
+// не влізають навіть у стислому вигляді й розкладені по частинах.
+// Тому бібліотека живе в localStorage браузера Майстра: місця там на
+// порядки більше, а ці дані потрібні лише йому — ворогів створює тільки він.
+//
+// Плата за це — бібліотека привʼязана до браузера. Для переїзду є
+// вивантаження й завантаження файлом.
 
-const CHUNKS = 6;
-const chunkKey = (n) => `${ID}/lib/${n}`;
-const chunkOf = (id) => Math.floor((Number(id) - 1) / 10);
+const KEY = "encounter-library";
 
-// Стислий запис: лише те, без чого не збудувати токен
 const pack = (item) => ({
   u: item.image.url,
   w: item.image.width,
@@ -24,51 +24,58 @@ const pack = (item) => ({
 });
 
 export const unpack = (v) => ({
-  image: { url: v.u, width: v.w, height: v.h, mime: v.m },
+  image: { url: v.u, width: v.w, height: v.h, mime: v.m || guessMime(v.u) },
   grid: v.d
     ? { dpi: v.d, offset: { x: v.ox ?? v.w / 2, y: v.oy ?? v.h / 2 } }
     : null,
   scale: { x: v.sx ?? 1, y: v.sy ?? 1 },
 });
 
-export async function readLibrary() {
-  const meta = await OBR.room.getMetadata();
-  const out = {};
-
-  // старий єдиний ключ — читаємо, щоб не втратити вже привʼязане
-  for (const [id, value] of Object.entries(meta[LIBRARY] ?? {})) {
-    const list = Array.isArray(value) ? value : [value];
-    const usable = list.filter((v) => v?.image?.url).map(pack);
-    if (usable.length) out[id] = usable;
-  }
-
-  for (let n = 0; n < CHUNKS; n++) {
-    for (const [id, list] of Object.entries(meta[chunkKey(n)] ?? {})) {
-      const merged = [...(out[id] ?? [])];
-      for (const v of list) {
-        if (v?.u && !merged.some((x) => x.u === v.u)) merged.push(v);
-      }
-      out[id] = merged;
-    }
-  }
-
-  return out;
+function guessMime(url = "") {
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
+  return ext === "jpg" || ext === "jpeg" ? "image/jpeg"
+    : ext === "webp" ? "image/webp"
+    : ext === "gif" ? "image/gif"
+    : "image/png";
 }
 
-// Записати цілу бібліотеку, розклавши по частинах
-export async function writeLibrary(library) {
-  const update = {};
-  for (let n = 0; n < CHUNKS; n++) update[chunkKey(n)] = {};
+function fromStorage() {
+  try {
+    return JSON.parse(localStorage.getItem(KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
 
-  for (const [id, list] of Object.entries(library)) {
-    if (!list?.length) continue;
-    const n = chunkOf(id);
-    if (n < 0 || n >= CHUNKS) continue;   // id поза бестіарієм
-    update[chunkKey(n)][id] = list;
+export async function readLibrary() {
+  const local = fromStorage();
+
+  // те, що колись лягло в метадані кімнати, підхоплюємо один раз
+  try {
+    const meta = await OBR.room.getMetadata();
+    const old = meta[LIBRARY];
+    if (old && Object.keys(old).length) {
+      let changed = false;
+      for (const [id, value] of Object.entries(old)) {
+        const list = Array.isArray(value) ? value : [value];
+        const packed = list.filter((v) => v?.image?.url).map(pack);
+        const merged = [...(local[id] ?? [])];
+        for (const v of packed) {
+          if (!merged.some((x) => x.u === v.u)) { merged.push(v); changed = true; }
+        }
+        if (merged.length) local[id] = merged;
+      }
+      if (changed) save(local);
+    }
+  } catch {
+    // поза кімнатою метаданих немає — не біда
   }
 
-  update[LIBRARY] = undefined;   // старий ключ більше не потрібен
-  await OBR.room.setMetadata(update);
+  return local;
+}
+
+function save(library) {
+  localStorage.setItem(KEY, JSON.stringify(library));
 }
 
 export async function addVariants(entries) {
@@ -85,7 +92,7 @@ export async function addVariants(entries) {
     added += 1;
   }
 
-  if (added) await writeLibrary(library);
+  if (added) save(library);
   return added;
 }
 
@@ -94,9 +101,37 @@ export async function removeVariant(id, url) {
   const list = (library[id] ?? []).filter((v) => v.u !== url);
   if (list.length) library[id] = list;
   else delete library[id];
-  await writeLibrary(library);
+  save(library);
 }
 
 export async function clearLibrary() {
-  await writeLibrary({});
+  localStorage.removeItem(KEY);
+  // і прибираємо старий слід у кімнаті, щоб він не повертався
+  try {
+    await OBR.room.setMetadata({ [LIBRARY]: undefined });
+  } catch {
+    // нічого страшного
+  }
+}
+
+export function exportLibrary() {
+  return JSON.stringify(fromStorage(), null, 2);
+}
+
+export function importLibrary(text) {
+  const data = JSON.parse(text);
+  const library = fromStorage();
+  let added = 0;
+
+  for (const [id, list] of Object.entries(data)) {
+    if (!Array.isArray(list)) continue;
+    const merged = [...(library[id] ?? [])];
+    for (const v of list) {
+      if (v?.u && !merged.some((x) => x.u === v.u)) { merged.push(v); added += 1; }
+    }
+    library[id] = merged;
+  }
+
+  save(library);
+  return added;
 }

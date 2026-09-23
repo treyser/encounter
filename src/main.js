@@ -156,9 +156,10 @@ async function checkLibrary() {
   const lib = await readLibrary();
   const box = $("result");
   box.innerHTML = "";
-  result = null;
+  plan = null;
+  $("spawn").disabled = true;
 
-  const missing = BESTIARY.filter((m) => !lib[m.id]?.length);
+  const missing = BESTIARY.filter((m) => !variantsOf(lib, m.id).length);
   const bound = BESTIARY.length - missing.length;
 
   const head = document.createElement("div");

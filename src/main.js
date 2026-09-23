@@ -54,6 +54,7 @@ async function init() {
 
   $("scan").addEventListener("click", scan);
   $("wipe").addEventListener("click", wipe);
+  $("check").addEventListener("click", checkLibrary);
   $("save").addEventListener("click", saveFile);
   $("load").addEventListener("click", () => $("file").click());
   $("file").addEventListener("change", loadFile);
@@ -150,6 +151,40 @@ async function scan() {
   }
 }
 
+// Показати, кого з бестіарію ще не привʼязано
+async function checkLibrary() {
+  const lib = await readLibrary();
+  const box = $("result");
+  box.innerHTML = "";
+  result = null;
+
+  const missing = BESTIARY.filter((m) => !lib[m.id]?.length);
+  const bound = BESTIARY.length - missing.length;
+
+  const head = document.createElement("div");
+  head.className = "entry";
+  head.innerHTML = `<div class="name"><b>Привʼязано: ${bound} з ${BESTIARY.length}</b><small>${
+    missing.length ? "нижче ті, кого бракує" : "усі на місці"
+  }</small></div>`;
+  box.appendChild(head);
+
+  for (const cat of CATEGORIES) {
+    const list = missing.filter((m) => m.cat === cat.key);
+    if (!list.length) continue;
+
+    const row = document.createElement("div");
+    row.className = "entry";
+    row.innerHTML = `<div class="name">${cat.name}<small>${list
+      .map((m) => `${m.id}. ${m.name}`)
+      .join(" · ")}</small></div>`;
+    box.appendChild(row);
+  }
+
+  $("hint").textContent = missing.length
+    ? `Без токена лишилось: ${missing.length}`
+    : "Бестіарій заповнений повністю";
+}
+
 // Бібліотека лежить у браузері, тож для переїзду на інший компʼютер
 // її треба вивантажити файлом.
 function saveFile() {
@@ -184,8 +219,11 @@ async function wipe() {
 async function roll() {
   const list = await pool();
   if (!list.length) {
-    $("hint").textContent =
-      "Немає жодного привʼязаного монстра з цієї категорії. ПКМ на токені → «Бестіарій».";
+    const lib = await readLibrary();
+    const bound = Object.keys(lib).length;
+    $("hint").textContent = bound
+      ? "У цій категорії немає привʼязаних монстрів. Обери іншу або «Будь-які»."
+      : "Бібліотека порожня. Натисни «Зчитати токени зі сцени» або привʼяжи вручну.";
     plan = null;
     await show();
     return;
@@ -194,6 +232,10 @@ async function roll() {
   const size = Number($("size").value);
   const level = Number($("level").value);
   plan = generate(list, size, level, difficulty);
+  if (!plan) {
+    $("hint").textContent = `Не вдалося скласти групу з ${list.length} доступних монстрів`;
+    return;
+  }
   await show();
 }
 
